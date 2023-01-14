@@ -137,22 +137,21 @@ struct AprilTagsImpl
     }
 };
 
-sensor_msgs::CameraInfo caminfo;
-bool caminfovalid {false};
-// Capture camera info published about the camera - needed for screen to world to work
-void camera_info_callback(const sensor_msgs::CameraInfoConstPtr &info)
-{
-    caminfo = *info;
-    caminfovalid = true;
-}
-
 class CudaApriltagDetector
 {
     public:
-        CudaApriltagDetector(ros::NodeHandle &n, const std::string &sub_topic, const std::string &pub_topic, const double tag_size, const int max_tags, const std::string transport_hint, const std::vector<int> &tag_id_vector)
+        CudaApriltagDetector(
+                ros::NodeHandle nh,
+                const std::string sub_topic,
+                const std::string camera_info,
+                const std::string pub_topic,
+                const double tag_size,
+                const int max_tags,
+                const std::string transport_hint,
+                const std::vector<int> tag_id_vector)
             :   
-            it_(new image_transport::ImageTransport(n))
-            , pub_(n.advertise<apriltag_ros::AprilTagDetectionArray>(pub_topic, 2))
+            it_(new image_transport::ImageTransport(nh))
+            , pub_(nh.advertise<apriltag_ros::AprilTagDetectionArray>(pub_topic, 2))
             , impl_(std::make_unique<AprilTagsImpl>())
             , tag_ids_{tag_id_vector.cbegin(), tag_id_vector.cend()}
 
@@ -160,6 +159,8 @@ class CudaApriltagDetector
             sub_ = it_->subscribe(sub_topic, 1,
                 &CudaApriltagDetector::imageCallback, this,
                 image_transport::TransportHints(transport_hint));
+            ;
+            camera_info_sub_ = nh.subscribe(camera_info, 1, &CudaApriltagDetector::camera_info_callback, this);
             tag_size_ = tag_size;
             max_tags_ = max_tags;
             ROS_INFO("CUDA apriltag detector is initialized");
@@ -191,9 +192,22 @@ class CudaApriltagDetector
 
         }
 
+
+        // Capture camera info published about the camera - needed for screen to world to work
+        void camera_info_callback(const sensor_msgs::CameraInfoConstPtr &info)
+        {
+            ROS_INFO("Received camera info. Unsubscribing from topic.");
+            caminfo = *info;
+            caminfovalid = true;
+            camera_info_sub_.shutdown();
+
+            ROS_INFO("Camera parameters: fx=%f, fy=%f, cx=%f, cy=%f",
+                float(caminfo.P[0]), float(caminfo.P[5]), float(caminfo.P[2]), float(caminfo.P[6])
+            );
+        }
+
         void imageCallback(const sensor_msgs::ImageConstPtr &image_rect)
         {
-
             if (!caminfovalid)
             {
                 ROS_WARN_STREAM("Waiting for camera info");
@@ -218,6 +232,7 @@ class CudaApriltagDetector
 
             if (impl_->april_tags_handle == nullptr)
             {
+                ROS_INFO("Initialized apriltag with %dx%d image.", img.cols, img.rows);
                 impl_->initialize(img.cols, img.rows,
                                   img.total() * img.elemSize(),  img.step,
                                   float(caminfo.P[0]), float(caminfo.P[5]), float(caminfo.P[2]), float(caminfo.P[6]),
@@ -306,6 +321,7 @@ class CudaApriltagDetector
     private:
         std::shared_ptr<image_transport::ImageTransport> it_;
         ros::Publisher pub_;
+        ros::Subscriber camera_info_sub_;
         std::unique_ptr<AprilTagsImpl> impl_;
         std::set<int> tag_ids_;
 
@@ -313,6 +329,9 @@ class CudaApriltagDetector
         double tag_size_;
         int max_tags_;
         tf2_ros::TransformBroadcaster br_;
+
+        sensor_msgs::CameraInfo caminfo;
+        bool caminfovalid {false};
 };
 
 int main(int argc, char **argv)
@@ -340,9 +359,7 @@ int main(int argc, char **argv)
     ROS_DEBUG("Found tag_ids: %s", key.c_str());
     nh.getParam(key, tag_ids);
 
-    ros::Subscriber camera_info_sub_ = nh.subscribe(camera_info, 1, camera_info_callback);
-
-    CudaApriltagDetector detection_node(nh, image_topic, pub_topic, tag_size, max_tags, transport_hint, tag_ids);
+    CudaApriltagDetector detection_node(nh, image_topic, camera_info, pub_topic, tag_size, max_tags, transport_hint, tag_ids);
 
     ros::spin();
     return 0;
