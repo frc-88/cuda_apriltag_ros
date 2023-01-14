@@ -149,7 +149,7 @@ void camera_info_callback(const sensor_msgs::CameraInfoConstPtr &info)
 class CudaApriltagDetector
 {
     public:
-        CudaApriltagDetector(ros::NodeHandle &n, const std::string &sub_topic, const std::string &pub_topic, const double tag_size, const std::string transport_hint, const std::vector<int> &tag_id_vector)
+        CudaApriltagDetector(ros::NodeHandle &n, const std::string &sub_topic, const std::string &pub_topic, const double tag_size, const int max_tags, const std::string transport_hint, const std::vector<int> &tag_id_vector)
             :   
             it_(new image_transport::ImageTransport(n))
             , pub_(n.advertise<apriltag_ros::AprilTagDetectionArray>(pub_topic, 2))
@@ -161,6 +161,8 @@ class CudaApriltagDetector
                 &CudaApriltagDetector::imageCallback, this,
                 image_transport::TransportHints(transport_hint));
             tag_size_ = tag_size;
+            max_tags_ = max_tags;
+            ROS_INFO("CUDA apriltag detector is initialized");
         }
 
         geometry_msgs::Transform ToTransformMsg(const nvAprilTagsID_t &detection)
@@ -220,10 +222,10 @@ class CudaApriltagDetector
                                   img.total() * img.elemSize(),  img.step,
                                   float(caminfo.P[0]), float(caminfo.P[5]), float(caminfo.P[2]), float(caminfo.P[6]),
                                   tag_size_,
-                                  40);
+                                  max_tags_);
             }
 
-            //   ROS_ERROR_STREAM("CUDA Apriltag callback ");
+            // ROS_INFO("CUDA Apriltag callback");
             const cudaError_t cuda_error =
                 cudaMemcpyAsync(impl_->input_image_buffer, (uchar4 *)img.ptr<unsigned char>(0),
                                 impl_->input_image_buffer_size, cudaMemcpyHostToDevice, impl_->main_stream);
@@ -309,6 +311,7 @@ class CudaApriltagDetector
 
         image_transport::Subscriber sub_;
         double tag_size_;
+        int max_tags_;
         tf2_ros::TransformBroadcaster br_;
 };
 
@@ -319,9 +322,11 @@ int main(int argc, char **argv)
 
     std::string image_topic, pub_topic, camera_info, transport_hint;
     double tag_size;
+    int max_tags;
     std::vector<int> tag_ids;
 
     ros::param::param<double>("~tag_size", tag_size, 0.1);
+    ros::param::param<int>("~max_tags", max_tags, 40);
     ros::param::param<std::string>("~image_topic", image_topic, "image");
     ros::param::param<std::string>("~camera_info", camera_info, "camera_info");
     ros::param::param<std::string>("~pub_topic", pub_topic, "tag_detections");
@@ -337,7 +342,7 @@ int main(int argc, char **argv)
 
     ros::Subscriber camera_info_sub_ = nh.subscribe(camera_info, 1, camera_info_callback);
 
-    CudaApriltagDetector detection_node(nh, image_topic, pub_topic, tag_size, transport_hint, tag_ids);
+    CudaApriltagDetector detection_node(nh, image_topic, pub_topic, tag_size, max_tags, transport_hint, tag_ids);
 
     ros::spin();
     return 0;
