@@ -257,7 +257,7 @@ class CudaApriltagDetector
                 apriltag_ros::AprilTagDetection msg_detection;
                 msg_detection.id.push_back(detection.id);
 
-                if (tag_ids_.count(detection.id) != 1)
+                if (tag_ids_.size() > 0 && tag_ids_.count(detection.id) != 1)
                 {
                     ROS_INFO_STREAM("Skipping tag with ID=" << detection.id);
                     continue;
@@ -302,13 +302,14 @@ class CudaApriltagDetector
         }
 
     private:
-        image_transport::Subscriber sub_;
-        ros::Publisher pub_;
         std::shared_ptr<image_transport::ImageTransport> it_;
+        ros::Publisher pub_;
         std::unique_ptr<AprilTagsImpl> impl_;
+        std::set<int> tag_ids_;
+
+        image_transport::Subscriber sub_;
         double tag_size_;
         tf2_ros::TransformBroadcaster br_;
-        std::set<int> tag_ids_;
 };
 
 int main(int argc, char **argv)
