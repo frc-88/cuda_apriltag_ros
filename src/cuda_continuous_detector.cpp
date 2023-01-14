@@ -272,6 +272,7 @@ class CudaApriltagDetector
             {
                 const nvAprilTagsID_t &detection = impl_->tags[i];
                 apriltag_ros::AprilTagDetection msg_detection;
+                msg_detection.header = msg_detections.header;
                 msg_detection.id.push_back(detection.id);
 
                 if (tag_ids_.size() > 0 && tag_ids_.count(detection.id) != 1)
@@ -293,6 +294,7 @@ class CudaApriltagDetector
                 const float size_y2 = detection.corners[3].y - detection.corners[1].y;
                 const float size_x2 = detection.corners[3].x - detection.corners[1].x;
 
+                // TODO: convert from pixels to meters using camera parameters
                 msg_detection.size.push_back((
                     size_y1 +
                     size_x1 +
