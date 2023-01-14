@@ -54,7 +54,8 @@
 #include <geometry_msgs/Transform.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
-#include "cuda_apriltag_ros/AprilTagDetectionArray.h"
+#include "apriltag_ros/AprilTagDetection.h"
+#include "apriltag_ros/AprilTagDetectionArray.h"
 
 struct AprilTagsImpl
 {
@@ -148,14 +149,17 @@ void camera_info_callback(const sensor_msgs::CameraInfoConstPtr &info)
 class CudaApriltagDetector
 {
     public:
-        CudaApriltagDetector(ros::NodeHandle &n, const std::string &sub_topic, const std::string &pub_topic, const double tag_size, const std::vector<int> &tag_id_vector)
-            :   //what should the camera topic be on the robot?
-                sub_(n.subscribe(sub_topic, 1, &CudaApriltagDetector::imageCallback, this))
-            , pub_(n.advertise<cuda_apriltag_ros::AprilTagDetectionArray>(pub_topic, 2))
+        CudaApriltagDetector(ros::NodeHandle &n, const std::string &sub_topic, const std::string &pub_topic, const double tag_size, const std::string transport_hint, const std::vector<int> &tag_id_vector)
+            :   
+            it_(new image_transport::ImageTransport(n))
+            , pub_(n.advertise<apriltag_ros::AprilTagDetectionArray>(pub_topic, 2))
             , impl_(std::make_unique<AprilTagsImpl>())
             , tag_ids_{tag_id_vector.cbegin(), tag_id_vector.cend()}
 
         {
+            sub_ = it_->subscribe(sub_topic, 1,
+                &CudaApriltagDetector::imageCallback, this,
+                image_transport::TransportHints(transport_hint));
             tag_size_ = tag_size;
         }
 
@@ -175,12 +179,6 @@ class CudaApriltagDetector
             tf2::Quaternion q;
             matrix.getRotation(q);
 
-
-            // Rotation matrix from nvAprilTags is column major
-            //const Eigen::Map<const Eigen::Matrix<float, 3, 3, Eigen::ColMajor>>
-            //orientation(detection.orientation);
-            //const Eigen::Quaternion<float> q(orientation);
-
             t.rotation.w = q.w();
             t.rotation.x = q.x();
             t.rotation.y = q.y();
@@ -191,7 +189,7 @@ class CudaApriltagDetector
 
         }
 
-        void imageCallback (const sensor_msgs::ImageConstPtr &image_rect)
+        void imageCallback(const sensor_msgs::ImageConstPtr &image_rect)
         {
 
             if (!caminfovalid)
@@ -200,14 +198,8 @@ class CudaApriltagDetector
                 return;
             }
             // Lazy updates:
-            // When there are no subscribers _and_ when tf is not published,
-            // skip detection.
-            // TODO : remove sub_ check, since if we're getting the callback the subscriber
-            //        has a publisher
-            if (pub_.getNumSubscribers() == 0 &&
-                    sub_.getNumPublishers() == 0)
-            {
-                ROS_INFO_STREAM("No subscribers and no tf publishing, skip processing.");
+            // When there are no subscribers, skip detection.
+            if (pub_.getNumSubscribers() == 0) {
                 return;
             }
             cv::Mat img;
@@ -257,18 +249,17 @@ class CudaApriltagDetector
             }
 
 
-            cuda_apriltag_ros::AprilTagDetectionArray msg_detections;
+            apriltag_ros::AprilTagDetectionArray msg_detections;
             msg_detections.header = image_rect->header;
             for (uint32_t i = 0; i < num_detections; i++)
             {
                 const nvAprilTagsID_t &detection = impl_->tags[i];
-                cuda_apriltag_ros::AprilTagDetection msg_detection;
-                msg_detection.family = tag_family_;
-                msg_detection.id = detection.id;
+                apriltag_ros::AprilTagDetection msg_detection;
+                msg_detection.id.push_back(detection.id);
 
                 if (tag_ids_.count(detection.id) != 1)
                 {
-                    ROS_WARN_STREAM("Skipping tag with ID=" << detection.id);
+                    ROS_INFO_STREAM("Skipping tag with ID=" << detection.id);
                     continue;
                 }
 
@@ -280,37 +271,23 @@ class CudaApriltagDetector
                 ROS_INFO_STREAM("translation = " << detection.translation[0] << " " << detection.translation[1] << " " << detection.translation[2]);
                 ROS_INFO_STREAM("orientation = " << detection.orientation[0] << " " << detection.orientation[1] << " " << detection.orientation[2] << " " << detection.orientation[3] << " " << detection.orientation[4] << " " << detection.orientation[5]  << " " << detection.orientation[6]  << " " << detection.orientation[7]  << " " << detection.orientation[8] );
 #endif
+                const float size_y1 = detection.corners[2].y - detection.corners[0].y;
+                const float size_x1 = detection.corners[2].x - detection.corners[0].x;
+                const float size_y2 = detection.corners[3].y - detection.corners[1].y;
+                const float size_x2 = detection.corners[3].x - detection.corners[1].x;
 
-                // detection
-
-
-                // corners
-                for (int corner_idx = 0; corner_idx < 4; corner_idx++)
-                {
-                    msg_detection.corners.data()[corner_idx].x =
-                        detection.corners[corner_idx].x;
-                    msg_detection.corners.data()[corner_idx].y =
-                        detection.corners[corner_idx].y;
-                }
-
-                // center
-                const float slope_1 = (detection.corners[2].y - detection.corners[0].y) /
-                                      (detection.corners[2].x - detection.corners[0].x);
-                const float slope_2 = (detection.corners[3].y - detection.corners[1].y) /
-                                      (detection.corners[3].x - detection.corners[1].x);
-                const float intercept_1 = detection.corners[0].y -
-                                          (slope_1 * detection.corners[0].x);
-                const float intercept_2 = detection.corners[3].y -
-                                          (slope_2 * detection.corners[3].x);
-                msg_detection.center.x = (intercept_2 - intercept_1) / (slope_1 - slope_2);
-                msg_detection.center.y = (slope_2 * intercept_1 - slope_1 * intercept_2) /
-                                         (slope_2 - slope_1);
+                msg_detection.size.push_back((
+                    size_y1 +
+                    size_x1 +
+                    size_y2 +
+                    size_x2
+                ) / 4.0);
 
                 // Timestamped Pose3 transform
-                //ROS_INFO_STREAM("Transforming tag ID " << detection.id << " header = " << image_rect->header << " ");
+                // ROS_INFO_STREAM("Transforming tag ID " << detection.id << " header = " << image_rect->header << " ");
                 geometry_msgs::TransformStamped tf;
                 tf.header = image_rect->header;
-                tf.child_frame_id = tag_family_ + std::to_string(detection.id);
+                tf.child_frame_id = std::to_string(detection.id);
                 tf.transform = ToTransformMsg(detection);
                 br_.sendTransform(tf);
 
@@ -322,16 +299,14 @@ class CudaApriltagDetector
             }
 
             pub_.publish(msg_detections);
-
         }
 
     private:
-        // I need to combine two
-        ros::Subscriber sub_;
+        image_transport::Subscriber sub_;
         ros::Publisher pub_;
+        std::shared_ptr<image_transport::ImageTransport> it_;
         std::unique_ptr<AprilTagsImpl> impl_;
         double tag_size_;
-        std::string tag_family_ = "36h11";
         tf2_ros::TransformBroadcaster br_;
         std::set<int> tag_ids_;
 };
@@ -371,10 +346,16 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    std::string transport_hint;
+    if (!nh.getParam("transport_hint", transport_hint))
+    {
+        ROS_ERROR("transport_hint not specified");
+        return -1;
+    }
 
     ros::Subscriber camera_info_sub_ = nh.subscribe(camera_info, 1, camera_info_callback);
 
-    CudaApriltagDetector detection_node(nh, image_topic, pub_topic, tag_size, tag_ids);
+    CudaApriltagDetector detection_node(nh, image_topic, pub_topic, tag_size, transport_hint, tag_ids);
 
     ros::spin();
     return 0;

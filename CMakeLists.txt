@@ -13,35 +13,14 @@ find_package(catkin REQUIRED COMPONENTS
   angles
   cv_bridge
   geometry_msgs
-  marker_msgs
-  message_generation
-  nav_msgs
   roscpp
-  rospy
   sensor_msgs
   std_msgs
-  std_srvs
   tf2
   tf2_ros
-  trajectory_msgs
+  image_transport
+  apriltag_ros
 )
-
-add_message_files(
-  FILES
-  AprilTagDetection.msg
-  AprilTagDetectionArray.msg
-)
-
-
-## Generate added messages and services with any dependencies listed here
-generate_messages(
-   DEPENDENCIES
-   geometry_msgs
-   nav_msgs
-   std_msgs
-   trajectory_msgs
-)
-
 
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
@@ -63,12 +42,14 @@ catkin_package(
     cv_bridge
     geometry_msgs
     image_transport
-    message_runtime
     pluginlib
     roscpp
     sensor_msgs
     std_msgs
-    tf
+    tf2
+    tf2_ros
+    image_transport
+    apriltag_ros
 )
 # Eigen
 #find_package(Eigen3 REQUIRED)
