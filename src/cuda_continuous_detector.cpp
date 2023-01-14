@@ -317,42 +317,23 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "cuda_apriltag_ros");
     ros::NodeHandle nh;
 
-    std::string image_topic, pub_topic, camera_info;
+    std::string image_topic, pub_topic, camera_info, transport_hint;
     double tag_size;
-
-    if (!nh.getParam("tag_size", tag_size))
-    {
-        ROS_ERROR("tag_size not specified");
-        return -1;
-    }
-    if (!nh.getParam("image_topic", image_topic))
-    {
-        ROS_ERROR("image_topic not specified");
-        return -1;
-    }
-    if (!nh.getParam("pub_topic", pub_topic))
-    {
-        ROS_ERROR("pub_topic not specified");
-        return -1;
-    }
-    if (!nh.getParam("camera_info", camera_info))
-    {
-        ROS_ERROR("camera_info not specified");
-        return -1;
-    }
     std::vector<int> tag_ids;
-    if (!nh.getParam("tag_ids", tag_ids))
-    {
-        ROS_ERROR("tag_ids not specified");
-        return -1;
-    }
 
-    std::string transport_hint;
-    if (!nh.getParam("transport_hint", transport_hint))
-    {
-        ROS_ERROR("transport_hint not specified");
+    ros::param::param<double>("~tag_size", tag_size, 0.1);
+    ros::param::param<std::string>("~image_topic", image_topic, "image");
+    ros::param::param<std::string>("~camera_info", camera_info, "camera_info");
+    ros::param::param<std::string>("~pub_topic", pub_topic, "tag_detections");
+    ros::param::param<std::string>("~transport_hint", transport_hint, "transport_hint");
+
+    std::string key;
+    if (!ros::param::search("tag_ids", key)) {
+        ROS_ERROR("Failed to find tag_ids parameter");
         return -1;
     }
+    ROS_DEBUG("Found tag_ids: %s", key.c_str());
+    nh.getParam(key, tag_ids);
 
     ros::Subscriber camera_info_sub_ = nh.subscribe(camera_info, 1, camera_info_callback);
 
