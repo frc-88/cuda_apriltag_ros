@@ -27,19 +27,45 @@
  * those of the authors and should not be interpreted as representing official
  * policies, either expressed or implied, of the California Institute of
  * Technology.
- */
+ *
+ ** single_image_detector.h ****************************************************
+ *
+ * Wrapper class of TagDetector class which calls TagDetector::detectTags on a
+ * an image stored at a specified load path and stores the output at a specified
+ * save path.
+ *
+ * $Revision: 1.0 $
+ * $Date: 2017/12/17 13:33:40 $
+ * $Author: dmalyuta $
+ *
+ * Originator:        Danylo Malyuta, JPL
+ ******************************************************************************/
+
+#ifndef CUDA_APRILTAG_ROS_SINGLE_IMAGE_DETECTOR_H
+#define CUDA_APRILTAG_ROS_SINGLE_IMAGE_DETECTOR_H
 
 #include "apriltag_ros/common_functions.h"
-#include "apriltag_ros/single_image_detector.h"
+#include <apriltag_ros/AnalyzeSingleImage.h>
 
-int main(int argc, char **argv)
+namespace cuda_apriltag_ros
 {
-  ros::init(argc, argv, "apriltag_ros_single_image_server");
 
-  ros::NodeHandle nh;
-  ros::NodeHandle pnh("~");
+class SingleImageDetector
+{
+ private:
+  TagDetector tag_detector_;
+  ros::ServiceServer single_image_analysis_service_;
 
-  apriltag_ros::SingleImageDetector continuous_tag_detector(nh, pnh);
+  ros::Publisher tag_detections_publisher_;
   
-  ros::spin();
-}
+ public:
+  SingleImageDetector(ros::NodeHandle& nh, ros::NodeHandle& pnh);
+
+  // The function which provides the single image analysis service
+  bool analyzeImage(apriltag_ros::AnalyzeSingleImage::Request& request,
+                     apriltag_ros::AnalyzeSingleImage::Response& response);
+};
+
+} // namespace apriltag_ros
+
+#endif // CUDA_APRILTAG_ROS_SINGLE_IMAGE_DETECTOR_H

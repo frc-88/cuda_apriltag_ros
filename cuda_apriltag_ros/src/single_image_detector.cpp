@@ -29,12 +29,12 @@
  * Technology.
  */
 
-#include "apriltag_ros/single_image_detector.h"
+#include "cuda_apriltag_ros/single_image_detector.h"
 
 #include <opencv2/highgui/highgui.hpp>
 #include <std_msgs/Header.h>
 
-namespace apriltag_ros
+namespace cuda_apriltag_ros
 {
 
 SingleImageDetector::SingleImageDetector (ros::NodeHandle& nh,
@@ -46,7 +46,7 @@ SingleImageDetector::SingleImageDetector (ros::NodeHandle& nh,
       nh.advertiseService("single_image_tag_detection",
                           &SingleImageDetector::analyzeImage, this);
   tag_detections_publisher_ =
-      nh.advertise<AprilTagDetectionArray>("tag_detections", 1);
+      nh.advertise<apriltag_ros::AprilTagDetectionArray>("tag_detections", 1);
   ROS_INFO_STREAM("Ready to do tag detection on single images");
 }
 
@@ -93,4 +93,4 @@ bool SingleImageDetector::analyzeImage(
   return true;
 }
 
-} // namespace apriltag_ros
+} // namespace cuda_apriltag_ros

@@ -28,44 +28,61 @@
  * policies, either expressed or implied, of the California Institute of
  * Technology.
  *
- ** single_image_detector.h ****************************************************
+ ** continuous_detector.h ******************************************************
  *
- * Wrapper class of TagDetector class which calls TagDetector::detectTags on a
- * an image stored at a specified load path and stores the output at a specified
- * save path.
+ * Wrapper class of TagDetector class which calls TagDetector::detectTags on
+ * each newly arrived image published by a camera.
  *
  * $Revision: 1.0 $
- * $Date: 2017/12/17 13:33:40 $
+ * $Date: 2017/12/17 13:25:52 $
  * $Author: dmalyuta $
  *
  * Originator:        Danylo Malyuta, JPL
  ******************************************************************************/
 
-#ifndef APRILTAG_ROS_SINGLE_IMAGE_DETECTOR_H
-#define APRILTAG_ROS_SINGLE_IMAGE_DETECTOR_H
+#ifndef CUDA_APRILTAG_ROS_CONTINUOUS_DETECTOR_H
+#define CUDA_APRILTAG_ROS_CONTINUOUS_DETECTOR_H
 
-#include "apriltag_ros/common_functions.h"
-#include <apriltag_ros/AnalyzeSingleImage.h>
+#include "cuda_apriltag_ros/common_functions.h"
 
-namespace apriltag_ros
+#include <memory>
+#include <mutex>
+
+#include <nodelet/nodelet.h>
+#include <ros/service_server.h>
+#include <std_srvs/Empty.h>
+
+namespace cuda_apriltag_ros
 {
 
-class SingleImageDetector
+class ContinuousDetector: public nodelet::Nodelet
 {
- private:
-  TagDetector tag_detector_;
-  ros::ServiceServer single_image_analysis_service_;
-
-  ros::Publisher tag_detections_publisher_;
-  
  public:
-  SingleImageDetector(ros::NodeHandle& nh, ros::NodeHandle& pnh);
+  ContinuousDetector() = default;
+  ~ContinuousDetector() = default;
 
-  // The function which provides the single image analysis service
-  bool analyzeImage(apriltag_ros::AnalyzeSingleImage::Request& request,
-                     apriltag_ros::AnalyzeSingleImage::Response& response);
+  void onInit();
+
+  void imageCallback(const sensor_msgs::ImageConstPtr& image_rect,
+                     const sensor_msgs::CameraInfoConstPtr& camera_info);
+
+  void refreshTagParameters();
+
+ private:
+  std::mutex detection_mutex_;
+  std::shared_ptr<TagDetector> tag_detector_;
+  bool draw_tag_detections_image_;
+  cv_bridge::CvImagePtr cv_image_;
+
+  std::shared_ptr<image_transport::ImageTransport> it_;
+  image_transport::CameraSubscriber camera_image_subscriber_;
+  image_transport::Publisher tag_detections_image_publisher_;
+  ros::Publisher tag_detections_publisher_;
+
+  ros::ServiceServer refresh_params_service_;
+  bool refreshParamsCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
 };
 
-} // namespace apriltag_ros
+} // namespace cuda_apriltag_ros
 
-#endif // APRILTAG_ROS_SINGLE_IMAGE_DETECTOR_H
+#endif // CUDA_APRILTAG_ROS_CONTINUOUS_DETECTOR_H

@@ -27,62 +27,19 @@
  * those of the authors and should not be interpreted as representing official
  * policies, either expressed or implied, of the California Institute of
  * Technology.
- *
- ** continuous_detector.h ******************************************************
- *
- * Wrapper class of TagDetector class which calls TagDetector::detectTags on
- * each newly arrived image published by a camera.
- *
- * $Revision: 1.0 $
- * $Date: 2017/12/17 13:25:52 $
- * $Author: dmalyuta $
- *
- * Originator:        Danylo Malyuta, JPL
- ******************************************************************************/
+ */
 
-#ifndef APRILTAG_ROS_CONTINUOUS_DETECTOR_H
-#define APRILTAG_ROS_CONTINUOUS_DETECTOR_H
+#include "cuda_apriltag_ros/common_functions.h"
+#include "cuda_apriltag_ros/single_image_detector.h"
 
-#include "apriltag_ros/common_functions.h"
-
-#include <memory>
-#include <mutex>
-
-#include <nodelet/nodelet.h>
-#include <ros/service_server.h>
-#include <std_srvs/Empty.h>
-
-namespace apriltag_ros
+int main(int argc, char **argv)
 {
+  ros::init(argc, argv, "apriltag_ros_single_image_server");
 
-class ContinuousDetector: public nodelet::Nodelet
-{
- public:
-  ContinuousDetector() = default;
-  ~ContinuousDetector() = default;
+  ros::NodeHandle nh;
+  ros::NodeHandle pnh("~");
 
-  void onInit();
-
-  void imageCallback(const sensor_msgs::ImageConstPtr& image_rect,
-                     const sensor_msgs::CameraInfoConstPtr& camera_info);
-
-  void refreshTagParameters();
-
- private:
-  std::mutex detection_mutex_;
-  std::shared_ptr<TagDetector> tag_detector_;
-  bool draw_tag_detections_image_;
-  cv_bridge::CvImagePtr cv_image_;
-
-  std::shared_ptr<image_transport::ImageTransport> it_;
-  image_transport::CameraSubscriber camera_image_subscriber_;
-  image_transport::Publisher tag_detections_image_publisher_;
-  ros::Publisher tag_detections_publisher_;
-
-  ros::ServiceServer refresh_params_service_;
-  bool refreshParamsCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
-};
-
-} // namespace apriltag_ros
-
-#endif // APRILTAG_ROS_CONTINUOUS_DETECTOR_H
+  cuda_apriltag_ros::SingleImageDetector continuous_tag_detector(nh, pnh);
+  
+  ros::spin();
+}

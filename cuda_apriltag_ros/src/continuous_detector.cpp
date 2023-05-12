@@ -29,13 +29,13 @@
  * Technology.
  */
 
-#include "apriltag_ros/continuous_detector.h"
+#include "cuda_apriltag_ros/continuous_detector.h"
 
 #include <pluginlib/class_list_macros.hpp>
 
-PLUGINLIB_EXPORT_CLASS(apriltag_ros::ContinuousDetector, nodelet::Nodelet);
+PLUGINLIB_EXPORT_CLASS(cuda_apriltag_ros::ContinuousDetector, nodelet::Nodelet);
 
-namespace apriltag_ros
+namespace cuda_apriltag_ros
 {
 void ContinuousDetector::onInit ()
 {
@@ -43,7 +43,7 @@ void ContinuousDetector::onInit ()
   ros::NodeHandle& pnh = getPrivateNodeHandle();
 
   tag_detector_ = std::shared_ptr<TagDetector>(new TagDetector(pnh));
-  draw_tag_detections_image_ = getAprilTagOption<bool>(pnh, 
+  draw_tag_detections_image_ = apriltag_ros::getAprilTagOption<bool>(pnh, 
       "publish_tag_detections_image", false);
   it_ = std::shared_ptr<image_transport::ImageTransport>(
       new image_transport::ImageTransport(nh));
@@ -58,7 +58,7 @@ void ContinuousDetector::onInit ()
                           &ContinuousDetector::imageCallback, this,
                           image_transport::TransportHints(transport_hint));
   tag_detections_publisher_ =
-      nh.advertise<AprilTagDetectionArray>("tag_detections", 1);
+      nh.advertise<apriltag_ros::AprilTagDetectionArray>("tag_detections", 1);
   if (draw_tag_detections_image_)
   {
     tag_detections_image_publisher_ = it_->advertise("tag_detections_image", 1);
@@ -127,4 +127,4 @@ void ContinuousDetector::imageCallback (
   }
 }
 
-} // namespace apriltag_ros
+} // namespace cuda_apriltag_ros

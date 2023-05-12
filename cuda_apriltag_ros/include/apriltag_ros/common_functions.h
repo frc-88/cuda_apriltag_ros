@@ -41,8 +41,8 @@
  * Originator:        Danylo Malyuta, JPL
  ******************************************************************************/
 
-#ifndef APRILTAG_ROS_COMMON_FUNCTIONS_H
-#define APRILTAG_ROS_COMMON_FUNCTIONS_H
+#ifndef CUDA_APRILTAG_ROS_COMMON_FUNCTIONS_H
+#define CUDA_APRILTAG_ROS_COMMON_FUNCTIONS_H
 
 #include <string>
 #include <sstream>
@@ -67,20 +67,12 @@
 #include "cuda_runtime.h"
 #include "nvapriltags/nvAprilTags.h"
 
+#include "apriltag_ros/common_functions.h"
 #include "apriltag_ros/AprilTagDetection.h"
 #include "apriltag_ros/AprilTagDetectionArray.h"
 
-namespace apriltag_ros
+namespace cuda_apriltag_ros
 {
-
-template<typename T>
-T getAprilTagOption(ros::NodeHandle& pnh,
-                    const std::string& param_name, const T & default_val)
-{
-  T param_val;
-  pnh.param<T>(param_name, param_val, default_val);
-  return param_val;
-}
 
 static bool initialize_cuda(unsigned int width, unsigned int height)
 {
@@ -99,78 +91,9 @@ static bool initialize_cuda(unsigned int width, unsigned int height)
   return true;
 }
 
-// Stores the properties of a tag member of a bundle
-struct TagBundleMember
-{
-  int id; // Payload ID
-  double size; // [m] Side length
-  cv::Matx44d T_oi; // Rigid transform from tag i frame to bundle origin frame
-};
-
-class StandaloneTagDescription
-{
- public:
-  StandaloneTagDescription() {};
-  StandaloneTagDescription(int id, double size,
-                           std::string &frame_name) :
-      id_(id),
-      size_(size),
-      frame_name_(frame_name) {}
-
-  double size() { return size_; }
-  int id() { return id_; }
-  std::string& frame_name() { return frame_name_; }
-
- private:
-  // Tag description
-  int id_;
-  double size_;
-  std::string frame_name_;
-};
-
-class TagBundleDescription
-{
- public:
-  std::map<int, int > id2idx_; // (id2idx_[<tag ID>]=<index in tags_>) mapping
-
-  TagBundleDescription(const std::string& name) :
-      name_(name) {}
-
-  void addMemberTag(int id, double size, cv::Matx44d T_oi) {
-    TagBundleMember member;
-    member.id = id;
-    member.size = size;
-    member.T_oi = T_oi;
-    tags_.push_back(member);
-    id2idx_[id] = tags_.size()-1;
-  }
-
-  const std::string& name() const { return name_; }
-  // Get IDs of bundle member tags
-  std::vector<int> bundleIds () {
-    std::vector<int> ids;
-    for (unsigned int i = 0; i < tags_.size(); i++) {
-      ids.push_back(tags_[i].id);
-    }
-    return ids;
-  }
-  // Get sizes of bundle member tags
-  std::vector<double> bundleSizes () {
-    std::vector<double> sizes;
-    for (unsigned int i = 0; i < tags_.size(); i++) {
-      sizes.push_back(tags_[i].size);
-    }
-    return sizes;
-  }
-  int memberID (int tagID) { return tags_[id2idx_[tagID]].id; }
-  double memberSize (int tagID) { return tags_[id2idx_[tagID]].size; }
-  cv::Matx44d memberT_oi (int tagID) { return tags_[id2idx_[tagID]].T_oi; }
-
- private:
-  // Bundle description
-  std::string name_;
-  std::vector<TagBundleMember > tags_;
-};
+static bool convert_nv_to_cpu_tags(apriltag_detection_t* input, nvAprilTagsID_t* output) {
+  
+}
 
 class TagDetector
 {
@@ -181,7 +104,7 @@ class TagDetector
   // Remove detections of tags with the same ID
   void removeDuplicates();
 
-  // AprilTag 2 code's attributes
+  // AprilTag code's attributes
   std::string family_;
   nvAprilTagsFamily nv_family_;
   int threads_;
@@ -189,12 +112,16 @@ class TagDetector
   double blur_;
   int refine_edges_;
   int debug_;
+  unsigned int width_, height_;
   int max_hamming_distance_ = 2;  // Tunable, but really, 2 is a good choice. Values of >=3
                                   // consume prohibitively large amounts of memory, and otherwise
                                   // you want the largest value possible.
 
+  // Apriltag ROS CPU
+  apriltag_ros::TagDetector cpu_detector_;
+
   // AprilTag objects
-  nvAprilTagsHandle april_tags_handle_;
+  zarray_t *detections_;
   nvAprilTagsCameraIntrinsics_t* cam_instrinsics_;
   
   // CUDA objects
@@ -213,46 +140,14 @@ class TagDetector
   TagDetector(ros::NodeHandle pnh);
   ~TagDetector();
 
-  // Store standalone and bundle tag descriptions
-  std::map<int, StandaloneTagDescription> parseStandaloneTags(
-      XmlRpc::XmlRpcValue& standalone_tag_descriptions);
-  std::vector<TagBundleDescription > parseTagBundles(
-      XmlRpc::XmlRpcValue& tag_bundles);
-  double xmlRpcGetDouble(
-      XmlRpc::XmlRpcValue& xmlValue, std::string field) const;
-  double xmlRpcGetDoubleWithDefault(
-      XmlRpc::XmlRpcValue& xmlValue, std::string field,
-      double defaultValue) const;
-
   bool findStandaloneTagDescription(
       int id, StandaloneTagDescription*& descriptionContainer,
       bool printWarning = true);
 
-  geometry_msgs::PoseWithCovarianceStamped makeTagPose(
-      const Eigen::Isometry3d& transform,
-      const std_msgs::Header& header);
-
   // Detect tags in an image
-  AprilTagDetectionArray detectTags(
+  apriltag_ros::AprilTagDetectionArray detectTags(
       const cv_bridge::CvImagePtr& image,
       const sensor_msgs::CameraInfoConstPtr& camera_info);
-
-  // Get the pose of the tag in the camera frame
-  // Returns homogeneous transformation matrix [R,t;[0 0 0 1]] which
-  // takes a point expressed in the tag frame to the same point
-  // expressed in the camera frame. As usual, R is the (passive)
-  // rotation from the tag frame to the camera frame and t is the
-  // vector from the camera frame origin to the tag frame origin,
-  // expressed in the camera frame.
-  Eigen::Isometry3d getRelativeTransform(
-      const std::vector<cv::Point3d >& objectPoints,
-      const std::vector<cv::Point2d >& imagePoints,
-      double fx, double fy, double cx, double cy) const;
-  
-  void addImagePoints(apriltag_detection_t *detection,
-                      std::vector<cv::Point2d >& imagePoints) const;
-  void addObjectPoints(double s, cv::Matx44d T_oi,
-                       std::vector<cv::Point3d >& objectPoints) const;
 
   // Draw the detected tags' outlines and payload values on the image
   void drawDetections(cv_bridge::CvImagePtr image);
@@ -260,6 +155,6 @@ class TagDetector
   bool get_publish_tf() const { return publish_tf_; }
 };
 
-} // namespace apriltag_ros
+} // namespace cuda_apriltag_ros
 
-#endif // APRILTAG_ROS_COMMON_FUNCTIONS_H
+#endif // CUDA_APRILTAG_ROS_COMMON_FUNCTIONS_H

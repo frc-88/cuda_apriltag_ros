@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(apriltag_ros)
+project(cuda_apriltag_ros)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -16,10 +16,12 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   std_msgs
   tf
+  apriltag_ros
 )
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(apriltag REQUIRED)
 
 # CUDA
 find_package(CUDA ${CUDA_MIN_VERSION} REQUIRED)
@@ -75,24 +77,6 @@ add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-O3>")
 #   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv7-a -mcpu=cortex-a9 -mfpu=neon -mtune=cortex-a9 -mvectorize-with-neon-quad -ffast-math ")
 # endif()
 
-add_message_files(
-  FILES
-  AprilTagDetection.msg
-  AprilTagDetectionArray.msg
-)
-
-add_service_files(
-  FILES
-  AnalyzeSingleImage.srv
-)
-
-generate_messages(
-  DEPENDENCIES
-  geometry_msgs
-  sensor_msgs
-  std_msgs
-)
-
 # Extract the include directories and libraries from apriltag::apriltag as catkin_package() does not support modern cmake.
 get_target_property(apriltag_INCLUDE_DIRS apriltag::apriltag INTERFACE_INCLUDE_DIRECTORIES)
 get_target_property(apriltag_LIBRARIES apriltag::apriltag INTERFACE_LINK_LIBRARIES)
@@ -137,8 +121,9 @@ target_link_libraries(${PROJECT_NAME}_common
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES} 
   ${CUDA_nvToolsExt_LIBRARY}
-  nvapriltags
   ${CUDA_LIBRARIES}
+  nvapriltags
+  apriltag::apriltag
 )
 
 add_library(${PROJECT_NAME}_continuous_detector src/continuous_detector.cpp)
