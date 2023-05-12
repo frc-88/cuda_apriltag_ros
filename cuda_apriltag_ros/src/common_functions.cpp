@@ -449,7 +449,8 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
 
 bool TagDetector::convert_nv_to_apriltag_detection(nvAprilTagsID_t* input, apriltag_detection_t* output)
 {
-
+  output->id = input->id;
+  output->hamming = input->hamming_error;
 }
 
 int TagDetector::idComparison (const void* first, const void* second)
