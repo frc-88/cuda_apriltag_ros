@@ -74,27 +74,6 @@
 namespace cuda_apriltag_ros
 {
 
-static bool initialize_cuda(unsigned char **cuda_out_buffer, unsigned int width, unsigned int height)
-{
-  /* Check unified memory support. */
-  cudaDeviceProp devProp;
-  cudaGetDeviceProperties(&devProp, 0);
-  if (!devProp.managedMemory) {
-    ROS_ERROR("CUDA device does not support managed memory.");
-    return false;
-  }
-
-  /* Allocate output buffer. */
-  size_t size = width * height * 4 * sizeof(char);
-  cudaMallocManaged(cuda_out_buffer, size, cudaMemAttachGlobal);
-  cudaDeviceSynchronize();
-  return true;
-}
-
-static bool convert_nv_to_cpu_tags(apriltag_detection_t* input, nvAprilTagsID_t* output) {
-  
-}
-
 class TagDetector
 {
  private:
@@ -122,10 +101,15 @@ class TagDetector
 
   // AprilTag objects
   zarray_t *detections_;
-  nvAprilTagsCameraIntrinsics_t* cam_instrinsics_;
+  nvAprilTagsCameraIntrinsics_t *cam_instrinsics_;
+  std::map<double, nvAprilTagsHandle*> handles_;
+  std::map<int, double> id_to_size_map_;
   
   // CUDA objects
+  cudaStream_t *main_stream_;
   unsigned char* cuda_out_buffer_;
+  cv::cuda::GpuMat gpu_mat_;
+  nvAprilTagsImageInput_t input_image_;
 
   // Other members
   std::map<int, apriltag_ros::StandaloneTagDescription> standalone_tag_descriptions_;
@@ -153,6 +137,8 @@ class TagDetector
   void drawDetections(cv_bridge::CvImagePtr image);
 
   bool get_publish_tf() const { return publish_tf_; }
+
+  bool convert_nv_to_apriltag_detection(nvAprilTagsID_t* input, apriltag_detection_t* output);
 };
 
 } // namespace cuda_apriltag_ros

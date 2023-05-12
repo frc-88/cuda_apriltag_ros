@@ -111,13 +111,14 @@ TagDetector::TagDetector(ros::NodeHandle pnh) :
   }
   else
   {
-    ROS_WARN("Invalid tag family specified! Aborting");
-    exit(1);
+    throw std::runtime_error("Invalid tag family specified! Aborting");
   }
 
   cam_instrinsics_ = nullptr;
   cuda_out_buffer_ = NULL;
   detections_= NULL;
+  handles_ = NULL;
+  main_stream_ = new cudaStream_t;
 }
 
 // destructor
@@ -195,22 +196,100 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
     }
   }
 
-  if (detections_)
-  {
-    apriltag_detections_destroy(detections_);
-    detections_ = NULL;
-  }
-
   // If detectors are not initialized
   //  Get all tag sizes in standalones and bundles
   //  Initialize as many nv apriltag detectors as there are unique sizes (nvCreateAprilTagsDetector)
+  //  Map tag ID to size
   // Else
   //  For each tag size
   //    run nvAprilTagsDetect
-  //    For each detection
-  //      convert nvAprilTagsID_t to apriltag_detection_t. convert_nv_to_cpu_tags
-  //      append detection to detections_
-  
+  //  For each detection
+  //    Get expected size from ID to size map
+  //    convert nvAprilTagsID_t to apriltag_detection_t. convert_nv_to_cpu_tags
+  //    append detection to detections_
+
+  if (handles_ == NULL) {
+    /* Check unified memory support. */
+    cudaDeviceProp devProp;
+    cudaGetDeviceProperties(&devProp, 0);
+    if (!devProp.managedMemory) {
+      ROS_WARN("CUDA device does not support managed memory.");
+    }
+
+    /* Allocate output buffer. */
+    size_t image_size = width_ * height_ * 4 * sizeof(char);
+    cudaMallocManaged(cuda_out_buffer_, image_size, cudaMemAttachGlobal);
+    cudaDeviceSynchronize();
+
+    gpu_mat_ = cv::cuda::GpuMat(height_, width_, CV_8UC4, cuda_out_buffer_);
+
+    std::set<double> sizes;
+    for (auto entry : standalone_tag_descriptions_) {
+      apriltag_ros::StandaloneTagDescription description = entry.second;
+      double size = description.size();
+      sizes.insert(size);
+      id_to_size_map_[description.id()] = size;
+    }
+    for (apriltag_ros::TagBundleDescription bundle : tag_bundle_descriptions_) {
+      std::vector<int> ids = bundle.bundleIds();
+      std::vector<double> sizes = bundle.bundleSizes();
+      for (size_t index = 0; index < ids.size(); index++) {
+        sizes.insert(sizes[index]);
+        id_to_size_map_[ids[index]] = size[index];
+      }
+    }
+
+    for (double size : sizes) {
+      int error_code = nvCreateAprilTagsDetector(handles_[size], width_, height_, nv_family_, cam_instrinsics_, (float)size);
+      if (error_code != 0) {
+        throw std::runtime_error("Failed to initialize NV Apriltag detector with code: " + std::to_string(error_code));
+      }
+    }
+  }
+
+  cuda_out_buffer_ = gray_image.data;
+  input_image_.dev_ptr = (uchar4*)cuda_out_buffer_;
+  input_image_.pitch = gpu_mat_.step;
+  std::vector<nvAprilTagsID_t> all_tags;
+  cudaStreamAttachMemAsync(*main_stream, input_image_.dev_ptr, 0, cudaMemAttachGlobal);
+  for (double size : sizes) {
+    nvAprilTagsHandle* april_tags_handle = handles_[size];
+
+    std::vector<nvAprilTagsID_t> tags;
+    uint32_t num_detections;
+    const int error = nvAprilTagsDetect(
+      &april_tags_handle, &input_image_, tags.data(),
+      &num_detections, max_tags, *main_stream);
+    if (error_code != 0) {
+      throw std::runtime_error("Failed to run NV Apriltag detection with code: " + std::to_string(error_code));
+    }
+
+    for (nvAprilTagsID_t tag : tags) {
+      if (id_to_size_map_[tag.id] == size) {
+        all_tags.push_back(tag);
+      }
+    }
+  }
+  cudaStreamAttachMemAsync(*main_stream, input_image_.dev_ptr, 0, cudaMemAttachHost);
+  cudaStreamSynchronize(*main_stream);
+
+
+  if (detections_)
+  {
+    apriltag_detections_destroy(detections_);
+    detections_ = zarray_create(all_tags.size());
+  }
+
+  for (nvAprilTagsID_t tag : all_tags) {
+    apriltag_detection_t detection = {};
+    if (!convert_nv_to_apriltag_detection(&tag, &detection)) {
+      ROS_WARN("Failed to convert tag");
+      continue;
+    }
+    zarray_add(detections_, &detection);
+  }
+
+
   // If remove_duplicates_ is set to true, then duplicate tags are not allowed.
   // Thus any duplicate tag IDs visible in the scene must include at least 1
   // erroneous detection. Remove any tags with duplicate IDs to ensure removal
@@ -366,6 +445,11 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
   }
 
   return tag_detection_array;
+}
+
+bool TagDetector::convert_nv_to_apriltag_detection(nvAprilTagsID_t* input, apriltag_detection_t* output)
+{
+
 }
 
 int TagDetector::idComparison (const void* first, const void* second)
