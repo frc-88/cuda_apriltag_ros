@@ -44,7 +44,7 @@
 #ifndef CUDA_APRILTAG_ROS_SINGLE_IMAGE_DETECTOR_H
 #define CUDA_APRILTAG_ROS_SINGLE_IMAGE_DETECTOR_H
 
-#include "apriltag_ros/common_functions.h"
+#include "cuda_apriltag_ros/common_functions.h"
 #include <apriltag_ros/AnalyzeSingleImage.h>
 
 namespace cuda_apriltag_ros

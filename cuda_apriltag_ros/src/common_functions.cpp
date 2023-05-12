@@ -46,6 +46,8 @@ TagDetector::TagDetector(ros::NodeHandle pnh) :
     max_hamming_distance_(apriltag_ros::getAprilTagOption<int>(pnh, "max_hamming_dist", 2)),
     publish_tf_(apriltag_ros::getAprilTagOption<bool>(pnh, "publish_tf", false))
 {
+  cpu_detector_ = std::shared_ptr<apriltag_ros::TagDetector>(new apriltag_ros::TagDetector(pnh));
+
   // Parse standalone tag descriptions specified by user (stored on ROS
   // parameter server)
   XmlRpc::XmlRpcValue standalone_tag_descriptions;
@@ -58,7 +60,7 @@ TagDetector::TagDetector(ros::NodeHandle pnh) :
     try
     {
       standalone_tag_descriptions_ =
-          parseStandaloneTags(standalone_tag_descriptions);
+          cpu_detector_->parseStandaloneTags(standalone_tag_descriptions);
     }
     catch(XmlRpc::XmlRpcException e)
     {
@@ -79,7 +81,7 @@ TagDetector::TagDetector(ros::NodeHandle pnh) :
   {
     try
     {
-      tag_bundle_descriptions_ = parseTagBundles(tag_bundle_descriptions);
+      tag_bundle_descriptions_ = cpu_detector_->parseTagBundles(tag_bundle_descriptions);
     }
     catch(XmlRpc::XmlRpcException e)
     {
@@ -171,7 +173,7 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
   // transforms are meaningless.
   if (fx == 0 && fy == 0) {
     ROS_WARN_STREAM_THROTTLE(5, "fx and fy are zero. Are the camera intrinsics set?");
-    return;
+    return apriltag_ros::AprilTagDetectionArray();
   }
 
   unsigned int width = gray_image.cols;
@@ -179,17 +181,17 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
 
   if (cam_instrinsics_ == nullptr) {
     cam_instrinsics_ = new nvAprilTagsCameraIntrinsics_t;
-    cam_instrinsics_.fx = fx;
-    cam_instrinsics_.fy = fy;
-    cam_instrinsics_.cx = cx;
-    cam_instrinsics_.cy = cy;
+    cam_instrinsics_->fx = fx;
+    cam_instrinsics_->fy = fy;
+    cam_instrinsics_->cx = cx;
+    cam_instrinsics_->cy = cy;
     width_ = width;
     height_ = height;
   }
   else {
     if (width != width_ || height != height_) {
       ROS_WARN_STREAM_THROTTLE(1, "Current image dimensions don't match the initial image. Not running apriltag detections.");
-      return;
+      return apriltag_ros::AprilTagDetectionArray();
     }
   }
 
@@ -241,7 +243,7 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
     for (unsigned int j=0; j<tag_bundle_descriptions_.size(); j++)
     {
       // Iterate over the registered bundles
-      TagBundleDescription bundle = tag_bundle_descriptions_[j];
+      apriltag_ros::TagBundleDescription bundle = tag_bundle_descriptions_[j];
 
       if (bundle.id2idx_.find(tagID) != bundle.id2idx_.end())
       {
@@ -252,11 +254,11 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
 
         //===== Corner points in the world frame coordinates
         double s = bundle.memberSize(tagID)/2;
-        addObjectPoints(s, bundle.memberT_oi(tagID),
+        cpu_detector_->addObjectPoints(s, bundle.memberT_oi(tagID),
                         bundleObjectPoints[bundleName]);
 
         //===== Corner points in the image frame coordinates
-        addImagePoints(detection, bundleImagePoints[bundleName]);
+        cpu_detector_->addImagePoints(detection, bundleImagePoints[bundleName]);
       }
     }
 
@@ -265,7 +267,7 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
     // bundle nor standalone (thus it is a tag in the environment
     // which the user specified no description for, or Apriltags
     // misdetected a tag (bad ID or a false positive)).
-    StandaloneTagDescription* standaloneDescription;
+    apriltag_ros::StandaloneTagDescription* standaloneDescription;
     if (!findStandaloneTagDescription(tagID, standaloneDescription,
                                       !is_part_of_bundle))
     {
@@ -297,13 +299,13 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
     // TODO solvePnP[Ransac] better?
     std::vector<cv::Point3d > standaloneTagObjectPoints;
     std::vector<cv::Point2d > standaloneTagImagePoints;
-    addObjectPoints(tag_size/2, cv::Matx44d::eye(), standaloneTagObjectPoints);
-    addImagePoints(detection, standaloneTagImagePoints);
-    Eigen::Isometry3d transform = getRelativeTransform(standaloneTagObjectPoints,
+    cpu_detector_->addObjectPoints(tag_size/2, cv::Matx44d::eye(), standaloneTagObjectPoints);
+    cpu_detector_->addImagePoints(detection, standaloneTagImagePoints);
+    Eigen::Isometry3d transform = cpu_detector_->getRelativeTransform(standaloneTagObjectPoints,
                                                      standaloneTagImagePoints,
                                                      fx, fy, cx, cy);
     geometry_msgs::PoseWithCovarianceStamped tag_pose =
-        makeTagPose(transform, image->header);
+        cpu_detector_->makeTagPose(transform, image->header);
 
     // Add the detection to the back of the tag detection array
     apriltag_ros::AprilTagDetection tag_detection;
@@ -330,13 +332,13 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
     {
       // Some member tags of this bundle were detected, get the bundle's
       // position!
-      TagBundleDescription& bundle = tag_bundle_descriptions_[j];
+      apriltag_ros::TagBundleDescription& bundle = tag_bundle_descriptions_[j];
 
       Eigen::Isometry3d transform =
-          getRelativeTransform(bundleObjectPoints[bundleName],
+          cpu_detector_->getRelativeTransform(bundleObjectPoints[bundleName],
                                bundleImagePoints[bundleName], fx, fy, cx, cy);
       geometry_msgs::PoseWithCovarianceStamped bundle_pose =
-          makeTagPose(transform, image->header);
+          cpu_detector_->makeTagPose(transform, image->header);
 
       // Add the detection to the back of the tag detection array
       apriltag_ros::AprilTagDetection tag_detection;
@@ -431,7 +433,7 @@ void TagDetector::drawDetections (cv_bridge::CvImagePtr image)
     bool is_part_of_bundle = false;
     for (unsigned int j=0; j<tag_bundle_descriptions_.size(); j++)
     {
-      TagBundleDescription bundle = tag_bundle_descriptions_[j];
+      apriltag_ros::TagBundleDescription bundle = tag_bundle_descriptions_[j];
       if (bundle.id2idx_.find(tagID) != bundle.id2idx_.end())
       {
         is_part_of_bundle = true;
@@ -439,7 +441,7 @@ void TagDetector::drawDetections (cv_bridge::CvImagePtr image)
       }
     }
     // If not part of a bundle, check if defined as a standalone tag
-    StandaloneTagDescription* standaloneDescription;
+    apriltag_ros::StandaloneTagDescription* standaloneDescription;
     if (!is_part_of_bundle &&
         !findStandaloneTagDescription(tagID, standaloneDescription, false))
     {
@@ -482,9 +484,9 @@ void TagDetector::drawDetections (cv_bridge::CvImagePtr image)
 }
 
 bool TagDetector::findStandaloneTagDescription (
-    int id, StandaloneTagDescription*& descriptionContainer, bool printWarning)
+    int id, apriltag_ros::StandaloneTagDescription*& descriptionContainer, bool printWarning)
 {
-  std::map<int, StandaloneTagDescription>::iterator description_itr =
+  std::map<int, apriltag_ros::StandaloneTagDescription>::iterator description_itr =
       standalone_tag_descriptions_.find(id);
   if (description_itr == standalone_tag_descriptions_.end())
   {

@@ -63,7 +63,7 @@ int main(int argc, char **argv)
   // Get the request parameters
   apriltag_ros::AnalyzeSingleImage service;
   service.request.full_path_where_to_get_image =
-      cuda_apriltag_ros::getAprilTagOption<std::string>(
+      apriltag_ros::getAprilTagOption<std::string>(
           pnh, "image_load_path", "");
   if (service.request.full_path_where_to_get_image.empty())
   {

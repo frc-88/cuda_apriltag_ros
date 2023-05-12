@@ -74,7 +74,7 @@
 namespace cuda_apriltag_ros
 {
 
-static bool initialize_cuda(unsigned int width, unsigned int height)
+static bool initialize_cuda(unsigned char **cuda_out_buffer, unsigned int width, unsigned int height)
 {
   /* Check unified memory support. */
   cudaDeviceProp devProp;
@@ -86,7 +86,7 @@ static bool initialize_cuda(unsigned int width, unsigned int height)
 
   /* Allocate output buffer. */
   size_t size = width * height * 4 * sizeof(char);
-  cudaMallocManaged(&cuda_out_buffer, size, cudaMemAttachGlobal);
+  cudaMallocManaged(cuda_out_buffer, size, cudaMemAttachGlobal);
   cudaDeviceSynchronize();
   return true;
 }
@@ -118,7 +118,7 @@ class TagDetector
                                   // you want the largest value possible.
 
   // Apriltag ROS CPU
-  apriltag_ros::TagDetector cpu_detector_;
+  std::shared_ptr<apriltag_ros::TagDetector> cpu_detector_;
 
   // AprilTag objects
   zarray_t *detections_;
@@ -128,8 +128,8 @@ class TagDetector
   unsigned char* cuda_out_buffer_;
 
   // Other members
-  std::map<int, StandaloneTagDescription> standalone_tag_descriptions_;
-  std::vector<TagBundleDescription > tag_bundle_descriptions_;
+  std::map<int, apriltag_ros::StandaloneTagDescription> standalone_tag_descriptions_;
+  std::vector<apriltag_ros::TagBundleDescription > tag_bundle_descriptions_;
   bool remove_duplicates_;
   bool run_quietly_;
   bool publish_tf_;
@@ -141,7 +141,7 @@ class TagDetector
   ~TagDetector();
 
   bool findStandaloneTagDescription(
-      int id, StandaloneTagDescription*& descriptionContainer,
+      int id, apriltag_ros::StandaloneTagDescription*& descriptionContainer,
       bool printWarning = true);
 
   // Detect tags in an image
