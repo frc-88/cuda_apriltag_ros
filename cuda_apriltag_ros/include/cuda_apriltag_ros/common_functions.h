@@ -67,6 +67,8 @@
 #include "cuda_runtime.h"
 #include "nvapriltags/nvAprilTags.h"
 
+#include <apriltag.h> // TODO: delete
+
 #include "apriltag_ros/common_functions.h"
 #include "apriltag_ros/AprilTagDetection.h"
 #include "apriltag_ros/AprilTagDetectionArray.h"
@@ -106,10 +108,12 @@ class TagDetector
   std::map<double, nvAprilTagsHandle*> handles_;
   std::map<int, double> id_to_size_map_;
   bool is_initialized;
+  apriltag_detector_t *td_;
+  apriltag_family_t *tf_;
   
   // CUDA objects
   cudaStream_t *main_stream_;
-  unsigned char** cuda_out_buffer_;
+  unsigned char* cuda_out_buffer_;
   cv::cuda::GpuMat gpu_mat_;
   nvAprilTagsImageInput_t input_image_;
 

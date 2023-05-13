@@ -30,6 +30,8 @@ link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 # NVAprilTags
 include_directories(nvapriltags)
 add_library(nvapriltags STATIC IMPORTED)
+execute_process(COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE)
+message( STATUS "Architecture: ${ARCHITECTURE}" )
 if( ${ARCHITECTURE} STREQUAL "x86_64" )
   set_property(TARGET nvapriltags PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/nvapriltags/lib_x86_64_cuda_11_4/libapril_tagging.a)
 elseif( ${ARCHITECTURE} STREQUAL "aarch64" )

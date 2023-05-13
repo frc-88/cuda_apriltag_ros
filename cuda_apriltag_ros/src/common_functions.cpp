@@ -34,6 +34,9 @@
 
 #include "common/homography.h"
 
+#include "tag36h11.h"  // TODO: delete
+#include "tag16h5.h"  // TODO: delete
+
 namespace cuda_apriltag_ros
 {
 
@@ -105,10 +108,12 @@ TagDetector::TagDetector(ros::NodeHandle pnh) :
   if (family_ == "tag36h11")
   {
     nv_family_ = NVAT_TAG36H11;
+    tf_ = tag36h11_create();  // TODO: delete
   }
   else if (family_ == "tag16h5")
   {
     nv_family_ = NVAT_TAG16H5;
+    tf_ = tag16h5_create();  // TODO: delete
   }
   else
   {
@@ -120,6 +125,16 @@ TagDetector::TagDetector(ros::NodeHandle pnh) :
   detections_= NULL;
   main_stream_ = new cudaStream_t;
   is_initialized = false;
+
+  // Create the AprilTag detector
+  // TODO: delete
+  td_ = apriltag_detector_create();
+  apriltag_detector_add_family_bits(td_, tf_, max_hamming_distance_);
+  td_->quad_decimate = (float)decimate_;
+  td_->quad_sigma = (float)blur_;
+  td_->nthreads = threads_;
+  td_->debug = debug_;
+  td_->refine_edges = refine_edges_;
 }
 
 // destructor
@@ -133,11 +148,11 @@ TagDetector::~TagDetector() {
   // free memory associated with tag family
   if (family_ == "tag36h11")
   {
-    
+    // TODO
   }
   else if (family_ == "tag16h5")
   {
-    
+    // TODO
   }
 }
 
@@ -154,11 +169,6 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
   {
     cv::cvtColor(image->image, gray_image, CV_BGR2GRAY);
   }
-  image_u8_t apriltag_image = { .width = gray_image.cols,
-                                  .height = gray_image.rows,
-                                  .stride = gray_image.cols,
-                                  .buf = gray_image.data
-  };
 
   image_geometry::PinholeCameraModel camera_model;
   camera_model.fromCameraInfo(camera_info);
@@ -220,10 +230,11 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
 
     /* Allocate output buffer. */
     size_t image_size = width_ * height_ * 4 * sizeof(char);
-    cudaMallocManaged(cuda_out_buffer_, image_size, cudaMemAttachGlobal);
+    ROS_INFO("Initializing CUDA with image size %dx%d", width_, height_);
+    cudaMallocManaged(&cuda_out_buffer_, image_size, cudaMemAttachGlobal);
     cudaDeviceSynchronize();
 
-    gpu_mat_ = cv::cuda::GpuMat(height_, width_, CV_8UC4, cuda_out_buffer_);
+    gpu_mat_ = cv::cuda::GpuMat(height_, width_, CV_8UC4, &cuda_out_buffer_);
 
     std::set<double> sizes;
     for (auto entry : standalone_tag_descriptions_) {
@@ -247,12 +258,15 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
         throw std::runtime_error("Failed to initialize NV Apriltag detector with code: " + std::to_string(error_code));
       }
     }
+    ROS_INFO("CUDA is initialized");
+    cudaStreamCreate(main_stream_);
   }
 
-  cuda_out_buffer_= &gray_image.data;
-  input_image_.dev_ptr = (uchar4*)*cuda_out_buffer_;
+  cuda_out_buffer_= gray_image.data;
+  input_image_.dev_ptr = (uchar4*)cuda_out_buffer_;
   input_image_.pitch = gpu_mat_.step;
   std::vector<nvAprilTagsID_t> all_tags;
+  ROS_INFO("mem async 1");
   cudaStreamAttachMemAsync(*main_stream_, input_image_.dev_ptr, 0, cudaMemAttachGlobal);
   for (auto entry : handles_) {
     double size = entry.first;
@@ -273,25 +287,105 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
       }
     }
   }
+  ROS_INFO("mem async 2");
   cudaStreamAttachMemAsync(*main_stream_, input_image_.dev_ptr, 0, cudaMemAttachHost);
   cudaStreamSynchronize(*main_stream_);
 
 
+  // if (detections_)
+  // {
+  //   apriltag_detections_destroy(detections_);
+  //   detections_ = zarray_create(all_tags.size());
+  // }
+
+  for (nvAprilTagsID_t tag : all_tags) {
+    ROS_INFO("%d | hamming: %d",
+      tag.id, tag.hamming_error
+    );
+    ROS_INFO("%d | corners:\n[[%f, %f], \n[%f, %f], \n[%f, %f], \n[%f, %f]]",
+      tag.id,
+      tag.corners[0].x,
+      tag.corners[0].y,
+      tag.corners[1].x,
+      tag.corners[1].y,
+      tag.corners[2].x,
+      tag.corners[2].y,
+      tag.corners[3].x,
+      tag.corners[3].y
+    );
+    ROS_INFO("%d | rotate:\n[[%f, %f, %f], \n[%f, %f, %f], \n[%f, %f, %f]]",
+      tag.id, 
+      tag.orientation[0],
+      tag.orientation[1],
+      tag.orientation[2],
+      tag.orientation[3],
+      tag.orientation[4],
+      tag.orientation[5],
+      tag.orientation[6],
+      tag.orientation[7],
+      tag.orientation[8]
+    );
+    ROS_INFO("%d | translation:\n[%f, %f, %f]",
+      tag.id, 
+      tag.translation[0],
+      tag.translation[1],
+      tag.translation[2]
+    );
+  //   apriltag_detection_t detection = {};
+  //   if (!convert_nv_to_apriltag_detection(&tag, &detection)) {
+  //     ROS_WARN("Failed to convert tag");
+  //     continue;
+  //   }
+  //   zarray_add(detections_, &detection);
+  }
+
+  // TODO: delete
+  image_u8_t apriltag_image = { .width = gray_image.cols,
+                                  .height = gray_image.rows,
+                                  .stride = gray_image.cols,
+                                  .buf = gray_image.data
+  };
   if (detections_)
   {
     apriltag_detections_destroy(detections_);
-    detections_ = zarray_create(all_tags.size());
+    detections_ = NULL;
   }
-
-  for (nvAprilTagsID_t tag : all_tags) {
-    apriltag_detection_t detection = {};
-    if (!convert_nv_to_apriltag_detection(&tag, &detection)) {
-      ROS_WARN("Failed to convert tag");
-      continue;
-    }
-    zarray_add(detections_, &detection);
+  detections_ = apriltag_detector_detect(td_, &apriltag_image);
+  for (int i=0; i < zarray_size(detections_); i++)
+  {
+    // Get the i-th detected tag
+    apriltag_detection_t *detection;
+    zarray_get(detections_, i, &detection);
+    ROS_INFO("%d | center: [%f, %f] | hamming: %d",
+      detection->id,
+      detection->c[0],
+      detection->c[1],
+      detection->hamming
+    );
+    ROS_INFO("%d | corners:\n[[%f, %f], \n[%f, %f], \n[%f, %f], \n[%f, %f]]",
+      detection->id,
+      detection->p[0][0],
+      detection->p[0][1],
+      detection->p[1][0],
+      detection->p[1][1],
+      detection->p[2][0],
+      detection->p[2][1],
+      detection->p[3][0],
+      detection->p[3][1]
+    );
+    ROS_INFO("%d | H:\n[[%f, %f, %f], \n[%f, %f, %f], \n[%f, %f, %f]]",
+      detection->id,
+      detection->H->data[0],
+      detection->H->data[1],
+      detection->H->data[2],
+      detection->H->data[3],
+      detection->H->data[4],
+      detection->H->data[5],
+      detection->H->data[6],
+      detection->H->data[7],
+      detection->H->data[8]
+    );
   }
-
 
   // If remove_duplicates_ is set to true, then duplicate tags are not allowed.
   // Thus any duplicate tag IDs visible in the scene must include at least 1
@@ -454,6 +548,7 @@ bool TagDetector::convert_nv_to_apriltag_detection(nvAprilTagsID_t* input, april
 {
   output->id = input->id;
   output->hamming = input->hamming_error;
+  return true;
 }
 
 int TagDetector::idComparison (const void* first, const void* second)
