@@ -91,6 +91,7 @@ class TagDetector
   double blur_;
   int refine_edges_;
   int debug_;
+  int max_tags_;
   unsigned int width_, height_;
   int max_hamming_distance_ = 2;  // Tunable, but really, 2 is a good choice. Values of >=3
                                   // consume prohibitively large amounts of memory, and otherwise
@@ -104,10 +105,11 @@ class TagDetector
   nvAprilTagsCameraIntrinsics_t *cam_instrinsics_;
   std::map<double, nvAprilTagsHandle*> handles_;
   std::map<int, double> id_to_size_map_;
+  bool is_initialized;
   
   // CUDA objects
   cudaStream_t *main_stream_;
-  unsigned char* cuda_out_buffer_;
+  unsigned char** cuda_out_buffer_;
   cv::cuda::GpuMat gpu_mat_;
   nvAprilTagsImageInput_t input_image_;
 

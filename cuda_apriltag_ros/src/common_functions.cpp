@@ -44,7 +44,8 @@ TagDetector::TagDetector(ros::NodeHandle pnh) :
     refine_edges_(apriltag_ros::getAprilTagOption<int>(pnh, "tag_refine_edges", 1)),
     debug_(apriltag_ros::getAprilTagOption<int>(pnh, "tag_debug", 0)),
     max_hamming_distance_(apriltag_ros::getAprilTagOption<int>(pnh, "max_hamming_dist", 2)),
-    publish_tf_(apriltag_ros::getAprilTagOption<bool>(pnh, "publish_tf", false))
+    publish_tf_(apriltag_ros::getAprilTagOption<bool>(pnh, "publish_tf", false)),
+    max_tags_(apriltag_ros::getAprilTagOption<int>(pnh, "max_tags", 100))
 {
   cpu_detector_ = std::shared_ptr<apriltag_ros::TagDetector>(new apriltag_ros::TagDetector(pnh));
 
@@ -117,8 +118,8 @@ TagDetector::TagDetector(ros::NodeHandle pnh) :
   cam_instrinsics_ = nullptr;
   cuda_out_buffer_ = NULL;
   detections_= NULL;
-  handles_ = NULL;
   main_stream_ = new cudaStream_t;
+  is_initialized = false;
 }
 
 // destructor
@@ -208,7 +209,8 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
   //    convert nvAprilTagsID_t to apriltag_detection_t. convert_nv_to_cpu_tags
   //    append detection to detections_
 
-  if (handles_ == NULL) {
+  if (is_initialized) {
+    is_initialized = true;
     /* Check unified memory support. */
     cudaDeviceProp devProp;
     cudaGetDeviceProperties(&devProp, 0);
@@ -232,10 +234,10 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
     }
     for (apriltag_ros::TagBundleDescription bundle : tag_bundle_descriptions_) {
       std::vector<int> ids = bundle.bundleIds();
-      std::vector<double> sizes = bundle.bundleSizes();
+      std::vector<double> bundle_sizes = bundle.bundleSizes();
       for (size_t index = 0; index < ids.size(); index++) {
-        sizes.insert(sizes[index]);
-        id_to_size_map_[ids[index]] = size[index];
+        sizes.insert(bundle_sizes[index]);
+        id_to_size_map_[ids[index]] = bundle_sizes[index];
       }
     }
 
@@ -247,19 +249,20 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
     }
   }
 
-  cuda_out_buffer_ = gray_image.data;
-  input_image_.dev_ptr = (uchar4*)cuda_out_buffer_;
+  cuda_out_buffer_= &gray_image.data;
+  input_image_.dev_ptr = (uchar4*)*cuda_out_buffer_;
   input_image_.pitch = gpu_mat_.step;
   std::vector<nvAprilTagsID_t> all_tags;
-  cudaStreamAttachMemAsync(*main_stream, input_image_.dev_ptr, 0, cudaMemAttachGlobal);
-  for (double size : sizes) {
+  cudaStreamAttachMemAsync(*main_stream_, input_image_.dev_ptr, 0, cudaMemAttachGlobal);
+  for (auto entry : handles_) {
+    double size = entry.first;
     nvAprilTagsHandle* april_tags_handle = handles_[size];
 
     std::vector<nvAprilTagsID_t> tags;
     uint32_t num_detections;
-    const int error = nvAprilTagsDetect(
-      &april_tags_handle, &input_image_, tags.data(),
-      &num_detections, max_tags, *main_stream);
+    const int error_code = nvAprilTagsDetect(
+      *april_tags_handle, &input_image_, tags.data(),
+      &num_detections, max_tags_, *main_stream_);
     if (error_code != 0) {
       throw std::runtime_error("Failed to run NV Apriltag detection with code: " + std::to_string(error_code));
     }
@@ -270,8 +273,8 @@ apriltag_ros::AprilTagDetectionArray TagDetector::detectTags (
       }
     }
   }
-  cudaStreamAttachMemAsync(*main_stream, input_image_.dev_ptr, 0, cudaMemAttachHost);
-  cudaStreamSynchronize(*main_stream);
+  cudaStreamAttachMemAsync(*main_stream_, input_image_.dev_ptr, 0, cudaMemAttachHost);
+  cudaStreamSynchronize(*main_stream_);
 
 
   if (detections_)
