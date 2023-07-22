@@ -1,2 +1,5 @@
-tag_size: 0.112
-tag_ids: [11]
+tag_size: 0.1524
+tag_family: 16h5
+tag_ids: [1, 2, 3, 4, 5, 6, 7, 8]
+# tag_family: 36h11
+# tag_ids: [5, 41]

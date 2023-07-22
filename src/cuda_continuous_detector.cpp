@@ -85,7 +85,8 @@ struct AprilTagsImpl
                     const uint32_t height, const size_t image_buffer_size,
                     const size_t pitch_bytes,
                     const float fx, const float fy, const float cx, const float cy,
-                    float tag_edge_size_, int max_tags_)
+                    float tag_edge_size_, int max_tags_,
+                    nvAprilTagsFamily tag_family_)
     {
         assert(!april_tags_handle);
 
@@ -94,7 +95,7 @@ struct AprilTagsImpl
 
         // Create AprilTags detector instance and get handle
         const int error = nvCreateAprilTagsDetector(
-                              &april_tags_handle, width, height, nvAprilTagsFamily::NVAT_TAG36H11,
+                              &april_tags_handle, width, height, tag_family_,
                               &cam_intrinsics, tag_edge_size_);
         if (error != 0)
         {
@@ -148,12 +149,14 @@ class CudaApriltagDetector
                 const double tag_size,
                 const int max_tags,
                 const std::string transport_hint,
-                const std::vector<int> tag_id_vector)
+                const std::vector<int> tag_id_vector,
+                nvAprilTagsFamily tag_family)
             :   
             it_(new image_transport::ImageTransport(nh))
             , pub_(nh.advertise<apriltag_ros::AprilTagDetectionArray>(pub_topic, 2))
             , impl_(std::make_unique<AprilTagsImpl>())
             , tag_ids_{tag_id_vector.cbegin(), tag_id_vector.cend()}
+            , tag_family_(tag_family)
 
         {
             sub_ = it_->subscribe(sub_topic, 1,
@@ -237,7 +240,8 @@ class CudaApriltagDetector
                                   img.total() * img.elemSize(),  img.step,
                                   float(caminfo.P[0]), float(caminfo.P[5]), float(caminfo.P[2]), float(caminfo.P[6]),
                                   tag_size_,
-                                  max_tags_);
+                                  max_tags_,
+                                  tag_family_);
             }
 
             // ROS_INFO("CUDA Apriltag callback");
@@ -272,7 +276,6 @@ class CudaApriltagDetector
             {
                 const nvAprilTagsID_t &detection = impl_->tags[i];
                 apriltag_ros::AprilTagDetection msg_detection;
-                msg_detection.header = msg_detections.header;
                 msg_detection.id.push_back(detection.id);
 
                 if (tag_ids_.size() > 0 && tag_ids_.count(detection.id) != 1)
@@ -326,6 +329,7 @@ class CudaApriltagDetector
         ros::Subscriber camera_info_sub_;
         std::unique_ptr<AprilTagsImpl> impl_;
         std::set<int> tag_ids_;
+        nvAprilTagsFamily tag_family_;
 
         image_transport::Subscriber sub_;
         double tag_size_;
@@ -341,7 +345,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "cuda_apriltag_ros");
     ros::NodeHandle nh;
 
-    std::string image_topic, pub_topic, camera_info, transport_hint;
+    std::string image_topic, pub_topic, camera_info, transport_hint, tag_family_param;
     double tag_size;
     int max_tags;
     std::vector<int> tag_ids;
@@ -352,6 +356,7 @@ int main(int argc, char **argv)
     ros::param::param<std::string>("~camera_info", camera_info, "camera_info");
     ros::param::param<std::string>("~pub_topic", pub_topic, "tag_detections");
     ros::param::param<std::string>("~transport_hint", transport_hint, "transport_hint");
+    ros::param::param<std::string>("~tag_family", tag_family_param, "36h11");
 
     std::string key;
     if (!ros::param::search("tag_ids", key)) {
@@ -361,7 +366,19 @@ int main(int argc, char **argv)
     ROS_DEBUG("Found tag_ids: %s", key.c_str());
     nh.getParam(key, tag_ids);
 
-    CudaApriltagDetector detection_node(nh, image_topic, camera_info, pub_topic, tag_size, max_tags, transport_hint, tag_ids);
+    nvAprilTagsFamily tag_family;
+    if (tag_family_param.compare("36h11")) {
+        tag_family = nvAprilTagsFamily::NVAT_TAG36H11;
+    }
+    else if (tag_family_param.compare("16h5")) {
+        tag_family = nvAprilTagsFamily::NVAT_TAG16H5;
+    }
+    else {
+        ROS_ERROR("Invalid tag parameter type: %s", tag_family_param.c_str());
+        return -1;
+    }
+
+    CudaApriltagDetector detection_node(nh, image_topic, camera_info, pub_topic, tag_size, max_tags, transport_hint, tag_ids, tag_family);
 
     ros::spin();
     return 0;
