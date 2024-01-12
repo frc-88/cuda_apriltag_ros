@@ -7,6 +7,7 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 cmake_minimum_required(VERSION 3.5)
+set(CMAKE_CUDA_ARCHITECTURES "native")
 project(cuda_apriltag_ros LANGUAGES C CXX CUDA)
 include("./cmake_modules/CMakeOpt.cmake")
 find_package(catkin REQUIRED COMPONENTS
