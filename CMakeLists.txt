@@ -7,7 +7,12 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 cmake_minimum_required(VERSION 3.5)
-set(CMAKE_CUDA_ARCHITECTURES "native")
+if (EXISTS /etc/nv_tegra_release)
+    message(STATUS "Detecting jetson device.")
+  else()
+    message(STATUS "Detecting x86 device.")
+    set(CMAKE_CUDA_ARCHITECTURES "native")
+endif()
 project(cuda_apriltag_ros LANGUAGES C CXX CUDA)
 include("./cmake_modules/CMakeOpt.cmake")
 find_package(catkin REQUIRED COMPONENTS
