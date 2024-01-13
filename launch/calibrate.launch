@@ -1,0 +1,14 @@
+<launch>
+    <arg name="camera_num" default="0" />
+    <arg name="board_width" default="5" />
+    <arg name="board_height" default="8" />
+
+    <include file="$(find cuda_apriltag_ros)/launch/usb_camera.launch" />
+
+    <node pkg="cuda_apriltag_ros" type="record_calibration.py" name="record_calibration"
+        required="true" output="screen">
+        <param name="camera_num" value="$(arg camera_num)" />
+        <param name="directory" value="$(find cuda_apriltag_ros)/images" />
+        <remap from="image_raw" to="/usb_cam/image_raw" />
+    </node>
+</launch>

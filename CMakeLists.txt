@@ -58,9 +58,9 @@ catkin_package(
     apriltag_ros
 )
 # Eigen
-#find_package(Eigen3 REQUIRED)
-#find_package(Threads REQUIRED)
-#include_directories(${EIGEN3_INCLUDE_DIR})
+find_package(Eigen3 REQUIRED)
+find_package(Threads REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
 
 # CUDA
 find_package(CUDA ${CUDA_MIN_VERSION} REQUIRED)
@@ -75,15 +75,13 @@ include_directories( ${OpenCV_INCLUDE_DIRS} )
 include_directories(nvapriltags)
 add_library(nvapriltags STATIC IMPORTED)
 if( ${ARCHITECTURE} STREQUAL "x86_64" )
-  set_property(TARGET nvapriltags PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/nvapriltags/lib_x86_64_cuda_11_4/libapril_tagging.a)
+  set_property(TARGET nvapriltags PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/nvapriltags/lib_x86_64/libapril_tagging.a)
 elseif( ${ARCHITECTURE} STREQUAL "aarch64" )
   set_property(TARGET nvapriltags PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/nvapriltags/lib_aarch64_jetpack44/libapril_tagging.a)
 endif()
 
 # Catkin
 include_directories(${catkin_INCLUDE_DIRS})
-#add_library(cuda_continuous_detector src/cuda_continuous_detector.cpp)
-
 
 MESSAGE("CWD : ${CMAKE_CURRENT_SOURCE_DIR}")
 
